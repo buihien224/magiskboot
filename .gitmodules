@@ -42,6 +42,3 @@
 [submodule "jni/external/xhook"]
 	path = jni/external/xhook
 	url = https://github.com/iqiyi/xHook
-[submodule "jni/external/zlib"]
-	path = jni/external/zlib
-	url = https://android.googlesource.com/platform/external/zlib/
