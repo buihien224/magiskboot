@@ -1,0 +1,47 @@
+[submodule "jni/external/busybox"]
+	path = jni/external/busybox
+	url = https://github.com/topjohnwu/ndk-busybox/
+[submodule "jni/external/bzip2"]
+	path = jni/external/bzip2
+	url = https://github.com/nemequ/bzip2/
+[submodule "dtc"]
+	path = dtc
+	url = https://github.com/dgibson/dtc/
+[submodule "jni/external/dtc"]
+	path = jni/external/dtc
+	url = https://github.com/dgibson/dtc/
+[submodule "jni/external/libcxx"]
+	path = jni/external/libcxx
+	url = https://github.com/topjohnwu/libcxx/
+[submodule "jni/external/lz4"]
+	path = jni/external/lz4
+	url = https://github.com/lz4/lz4/
+	branch = dev
+[submodule "jni/external/mincrypt"]
+	path = jni/external/mincrypt
+	url = https://github.com/topjohnwu/mincrypt/
+[submodule "jni/external/nanopb"]
+	path = jni/external/nanopb
+	url = https://github.com/nanopb/nanopb/
+[submodule "jni/external/parallel-hashmap"]
+	path = jni/external/parallel-hashmap
+	url = https://github.com/greg7mdp/parallel-hashmap/
+[submodule "jni/external/selinux"]
+	path = jni/external/selinux
+	url = https://github.com/topjohnwu/selinux/
+[submodule "jni/external/zopfli"]
+	path = jni/external/zopfli
+	url = https://github.com/google/zopfli
+[submodule "jni/external/xz"]
+	path = jni/external/xz
+	url = https://github.com/xz-mirror/xz/
+	branch = v5.2
+[submodule "jni/external/pcre"]
+	path = jni/external/pcre
+	url = https://android.googlesource.com/platform/external/pcre
+[submodule "jni/external/xhook"]
+	path = jni/external/xhook
+	url = https://github.com/iqiyi/xHook
+[submodule "jni/external/zlib"]
+	path = jni/external/zlib
+	url = https://android.googlesource.com/platform/external/zlib/
