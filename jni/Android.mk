@@ -143,7 +143,7 @@ LOCAL_STATIC_LIBRARIES := \
 
 LOCAL_SRC_FILES := \
     core/applet_stub.cpp \
-    resetprop/persist_properties.cpp \
+    resetprop/persist.cpp \
     resetprop/resetprop.cpp \
 
 LOCAL_CFLAGS := -DAPPLET_STUB_MAIN=resetprop_main
