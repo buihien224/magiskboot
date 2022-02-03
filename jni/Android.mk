@@ -4,6 +4,10 @@ LOCAL_PATH := $(call my-dir)
 # Binaries
 ########################
 
+B_BOOT := true
+B_POLICY := true
+B_PROP := true
+
 ifdef B_MAGISK
 
 include $(CLEAR_VARS)
