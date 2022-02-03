@@ -49,10 +49,6 @@ ssize_t getdelim(char **buf, size_t *bufsiz, int delimiter, FILE *fp) {
     }
 }
 
-ssize_t getline(char **buf, size_t *bufsiz, FILE *fp) {
-    return getdelim(buf, bufsiz, '\n', fp);
-}
-
 // Original source: https://android.googlesource.com/platform/bionic/+/master/libc/bionic/mntent.cpp
 // License: AOSP, full copyright notice please check original source
 
@@ -88,41 +84,6 @@ int endmntent(FILE *fp) {
         fclose(fp);
     }
     return 1;
-}
-
-// Missing system call wrappers
-
-int setns(int fd, int nstype) {
-    return syscall(__NR_setns, fd, nstype);
-}
-
-int unshare(int flags) {
-    return syscall(__NR_unshare, flags);
-}
-
-int accept4(int sockfd, struct sockaddr *addr, socklen_t *addrlen, int flags) {
-    return syscall(__NR_accept4, sockfd, addr, addrlen, flags);
-}
-
-int dup3(int oldfd, int newfd, int flags) {
-    return syscall(__NR_dup3, oldfd, newfd, flags);
-}
-
-ssize_t readlinkat(int dirfd, const char *pathname, char *buf, size_t bufsiz) {
-    return syscall(__NR_readlinkat, dirfd, pathname, buf, bufsiz);
-}
-
-int symlinkat(const char *target, int newdirfd, const char *linkpath) {
-    return syscall(__NR_symlinkat, target, newdirfd, linkpath);
-}
-
-int linkat(int olddirfd, const char *oldpath,
-           int newdirfd, const char *newpath, int flags) {
-    return syscall(__NR_linkat, olddirfd, oldpath, newdirfd, newpath, flags);
-}
-
-int inotify_init1(int flags) {
-    return syscall(__NR_inotify_init1, flags);
 }
 
 int faccessat(int dirfd, const char *pathname, int mode, int flags) {
