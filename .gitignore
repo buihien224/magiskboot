@@ -1,4 +1,5 @@
 /obj
 /libs
 /Magisk
+/ndk
 *.zip
