@@ -6,5 +6,6 @@
 * 如何使用:
 *   git clone --recurse-submodules https://github.com/xiaoxindada/magiskboot_ndk.git
 *   cd magiskboot_ndk
+*   git pull --recurse-submodules
 *   ./build.sh setup
 *   生成物 lib,bin: obj/local/${ARCH} 最终输出: libs/${ARCH} 
