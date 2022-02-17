@@ -1,0 +1,36 @@
+From 12a5502b9eda65155a3ed9d6c9e7b0c204a0e1fc Mon Sep 17 00:00:00 2001
+From: GarfieldHan <2652609017@qq.com>
+Date: Thu, 17 Feb 2022 22:59:16 +0800
+Subject: [PATCH] bootimg: Force adding selinux permissive state when dumping
+ header
+
+Signed-off-by: GarfieldHan <2652609017@qq.com>
+---
+ jni/magiskboot/bootimg.cpp | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/jni/magiskboot/bootimg.cpp b/jni/magiskboot/bootimg.cpp
+index ca090cf..a96c304 100644
+--- a/jni/magiskboot/bootimg.cpp
++++ b/jni/magiskboot/bootimg.cpp
+@@ -83,7 +83,7 @@ void dyn_img_hdr::print() {
+     if (char *n = name()) {
+         fprintf(stderr, "%-*s [%s]\n", PADDING, "NAME", n);
+     }
+-    fprintf(stderr, "%-*s [%.*s%.*s]\n", PADDING, "CMDLINE",
++    fprintf(stderr, "%-*s [%.*s%.*s androidboot.selinux=permissive]\n", PADDING, "CMDLINE",
+             BOOT_ARGS_SIZE, cmdline(), BOOT_EXTRA_ARGS_SIZE, extra_cmdline());
+     if (char *checksum = id()) {
+         fprintf(stderr, "%-*s [", PADDING, "CHECKSUM");
+@@ -97,7 +97,7 @@ void dyn_img_hdr::dump_hdr_file() {
+     FILE *fp = xfopen(HEADER_FILE, "w");
+     if (name())
+         fprintf(fp, "name=%s\n", name());
+-    fprintf(fp, "cmdline=%.*s%.*s\n", BOOT_ARGS_SIZE, cmdline(), BOOT_EXTRA_ARGS_SIZE, extra_cmdline());
++    fprintf(fp, "cmdline=%.*s%.*s androidboot.selinux=permissive\n", BOOT_ARGS_SIZE, cmdline(), BOOT_EXTRA_ARGS_SIZE, extra_cmdline());
+     uint32_t ver = os_version();
+     if (ver) {
+         int a, b, c, y, m;
+-- 
+2.25.1
+
