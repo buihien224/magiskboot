@@ -1,0 +1,79 @@
+# This is a basic workflow that is manually triggered
+
+name: magisk
+
+# Controls when the action will run. Workflow runs when manually triggered using the UI
+# or API.
+on: 
+  push:
+  workflow_dispatch:
+
+jobs:
+  magisk:
+    runs-on: ubuntu-18.04
+
+    steps:
+      - name: Initialization environment
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y python git unzip zip
+
+      - name: compile
+        run: |
+          git config --global user.email "laityts@gmail.com"
+          git config --global user.name "laityts"
+          git clone --recurse-submodules https://github.com/laityts/magiskboot.git
+          cd magiskboot
+          git pull --recurse-submodules
+          wget -q https://dl.google.com/android/repository/android-ndk-r23b-linux.zip -O "NDK.zip"
+          unzip -q NDK.zip
+          mv android-ndk-* ndk
+          export PATH=${PATH}:${{ github.workspace }}/magiskboot/ndk
+          ndk-build NDK_DEBUG=0
+          date=$(date +"%y%m%d")
+          echo "date=$(date +%y%m%d)" >> $GITHUB_ENV
+          zip magiskboot-arm64-v8a-$date.zip libs/arm64-v8a/magiskboot
+          zip magiskpolicy-arm64-v8a-$date.zip libs/arm64-v8a/magiskpolicy
+          zip resetprop-arm64-v8a-$date.zip libs/arm64-v8a/resetprop
+          zip magiskboot-x86_64-$date.zip libs/x86_64/magiskboot
+          zip magiskpolicy-x86_64-$date.zip libs/x86_64/magiskpolicy
+          zip resetprop-x86_64-$date.zip libs/x86_64/resetprop
+          ls
+
+      - name: Upload to Artifact
+        uses: actions/upload-artifact@v2
+        with:
+          name: magiskboot
+          path: |
+            ${{ github.workspace }}/magiskboot/libs/
+          retention-days: 7
+
+      - name: Upload magiskboot to Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            ${{ github.workspace }}/magiskboot/magiskboot-arm64-v8a-${{ env.date }}.zip
+            ${{ github.workspace }}/magiskboot/magiskboot-x86_64-${{ env.date }}.zip
+          tag_name: magiskboot-${{ env.date }}
+          body: 使用AndroidNDK编译
+          token: ${{ github.token }}
+
+      - name: Upload magiskpolicy to Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            ${{ github.workspace }}/magiskboot/magiskpolicy-arm64-v8a-${{ env.date }}.zip
+            ${{ github.workspace }}/magiskboot/magiskpolicy-x86_64-${{ env.date }}.zip
+          tag_name: magiskpolicy-${{ env.date }}
+          body: 使用AndroidNDK编译
+          token: ${{ github.token }}
+
+      - name: Upload resetprop to Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            ${{ github.workspace }}/magiskboot/resetprop-arm64-v8a-${{ env.date }}.zip
+            ${{ github.workspace }}/magiskboot/resetprop-x86_64-${{ env.date }}.zip
+          tag_name: resetprop-${{ env.date }}
+          body: 使用AndroidNDK编译
+          token: ${{ github.token }}
