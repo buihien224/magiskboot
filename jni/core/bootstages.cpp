@@ -8,7 +8,7 @@
 
 #include <magisk.hpp>
 #include <db.hpp>
-#include <utils.hpp>
+#include <base.hpp>
 #include <daemon.hpp>
 #include <resetprop.hpp>
 #include <selinux.hpp>
@@ -25,22 +25,36 @@ bool zygisk_enabled = false;
  *********/
 
 #define MNT_DIR_IS(dir) (me->mnt_dir == string_view(dir))
+#define MNT_TYPE_IS(type) (me->mnt_type == string_view(type))
 #define SETMIR(b, part) snprintf(b, sizeof(b), "%s/" MIRRDIR "/" #part, MAGISKTMP.data())
 #define SETBLK(b, part) snprintf(b, sizeof(b), "%s/" BLOCKDIR "/" #part, MAGISKTMP.data())
 
-#define do_mount_mirror(part, flag) {\
-    SETMIR(buf1, part); \
-    SETBLK(buf2, part); \
-    unlink(buf2); \
+#define do_mount_mirror(part) {     \
+    SETMIR(buf1, part);             \
+    SETBLK(buf2, part);             \
+    unlink(buf2);                   \
     mknod(buf2, S_IFBLK | 0600, st.st_dev); \
-    xmkdir(buf1, 0755); \
-    xmount(buf2, buf1, me->mnt_type, flag, nullptr); \
-    LOGI("mount: %s\n", buf1); \
+    xmkdir(buf1, 0755);             \
+    int flags = 0;                  \
+    auto opts = split_ro(me->mnt_opts, ",");\
+    for (string_view s : opts) {    \
+        if (s == "ro") {            \
+            flags |= MS_RDONLY;     \
+            break;                  \
+        }                           \
+    }                               \
+    xmount(buf2, buf1, me->mnt_type, flags, nullptr); \
+    LOGI("mount: %s\n", buf1);      \
 }
 
-#define mount_mirror(part, flag) \
-else if (MNT_DIR_IS("/" #part) && me->mnt_type != "tmpfs"sv && me->mnt_type != "overlay"sv && lstat(me->mnt_dir, &st) == 0) \
-    do_mount_mirror(part, flag)
+#define mount_mirror(part) \
+if (MNT_DIR_IS("/" #part)  \
+    && !MNT_TYPE_IS("tmpfs") \
+    && !MNT_TYPE_IS("overlay") \
+    && lstat(me->mnt_dir, &st) == 0) { \
+    do_mount_mirror(part); \
+    break;                 \
+}
 
 #define link_mirror(part) \
 SETMIR(buf1, part); \
@@ -50,11 +64,12 @@ if (access("/system/" #part, F_OK) == 0 && access(buf1, F_OK) != 0) { \
 }
 
 #define link_orig_dir(dir, part) \
-else if (MNT_DIR_IS(dir) && me->mnt_type != "tmpfs"sv && me->mnt_type != "overlay"sv) { \
-    SETMIR(buf1, part); \
-    rmdir(buf1); \
-    xsymlink(dir, buf1); \
-    LOGI("link: %s\n", buf1); \
+if (MNT_DIR_IS(dir) && !MNT_TYPE_IS("tmpfs") && !MNT_TYPE_IS("overlay")) { \
+    SETMIR(buf1, part);          \
+    rmdir(buf1);                 \
+    xsymlink(dir, buf1);         \
+    LOGI("link: %s\n", buf1);    \
+    break;                       \
 }
 
 #define link_orig(part) link_orig_dir("/" #part, part)
@@ -66,20 +81,22 @@ static void mount_mirrors() {
     LOGI("* Mounting mirrors\n");
 
     parse_mnt("/proc/mounts", [&](mntent *me) {
-        struct stat st;
-        if (0) {}
-        mount_mirror(system, MS_RDONLY)
-        mount_mirror(vendor, MS_RDONLY)
-        mount_mirror(product, MS_RDONLY)
-        mount_mirror(system_ext, MS_RDONLY)
-        mount_mirror(data, 0)
-        link_orig(cache)
-        link_orig(metadata)
-        link_orig(persist)
-        link_orig_dir("/mnt/vendor/persist", persist)
-        else if (SDK_INT >= 24 && MNT_DIR_IS("/proc") && !strstr(me->mnt_opts, "hidepid=2")) {
-            xmount(nullptr, "/proc", nullptr, MS_REMOUNT, "hidepid=2,gid=3009");
-        }
+        struct stat st{};
+        do {
+            mount_mirror(system)
+            mount_mirror(vendor)
+            mount_mirror(product)
+            mount_mirror(system_ext)
+            mount_mirror(data)
+            link_orig(cache)
+            link_orig(metadata)
+            link_orig(persist)
+            link_orig_dir("/mnt/vendor/persist", persist)
+            if (SDK_INT >= 24 && MNT_DIR_IS("/proc") && !strstr(me->mnt_opts, "hidepid=2")) {
+                xmount(nullptr, "/proc", nullptr, MS_REMOUNT, "hidepid=2,gid=3009");
+                break;
+            }
+        } while (false);
         return true;
     });
     SETMIR(buf1, system);
@@ -89,7 +106,7 @@ static void mount_mirrors() {
         parse_mnt("/proc/mounts", [&](mntent *me) {
             struct stat st;
             if (MNT_DIR_IS("/") && me->mnt_type != "rootfs"sv && stat("/", &st) == 0) {
-                do_mount_mirror(system_root, MS_RDONLY)
+                do_mount_mirror(system_root)
                 return false;
             }
             return true;
@@ -105,8 +122,9 @@ static bool magisk_env() {
 
     LOGI("* Initializing Magisk environment\n");
 
+    preserve_stub_apk();
     string pkg;
-    get_manager(&pkg);
+    get_manager(0, &pkg);
 
     sprintf(buf, "%s/0/%s/install", APP_DATA_DIR,
             pkg.empty() ? "xxx" /* Ensure non-exist path */ : pkg.data());
@@ -114,7 +132,7 @@ static bool magisk_env() {
     // Alternative binaries paths
     const char *alt_bin[] = { "/cache/data_adb/magisk", "/data/magisk", buf };
     for (auto alt : alt_bin) {
-        struct stat st;
+        struct stat st{};
         if (lstat(alt, &st) == 0) {
             if (S_ISLNK(st.st_mode)) {
                 unlink(alt);
@@ -126,15 +144,7 @@ static bool magisk_env() {
             break;
         }
     }
-
-    // Remove stuffs
     rm_rf("/cache/data_adb");
-    rm_rf("/data/adb/modules/.core");
-    unlink("/data/adb/magisk.img");
-    unlink("/data/adb/magisk_merge.img");
-    unlink("/data/magisk.img");
-    unlink("/data/magisk_merge.img");
-    unlink("/data/magisk_debug.log");
 
     // Directories in /data/adb
     xmkdir(DATABIN, 0755);
@@ -149,6 +159,11 @@ static bool magisk_env() {
     mkdir(dirname(buf), 0755);
     cp_afc(DATABIN "/busybox", buf);
     exec_command_async(buf, "--install", "-s", dirname(buf));
+
+    if (access(DATABIN "/magiskpolicy", X_OK) == 0) {
+        sprintf(buf, "%s/magiskpolicy", MAGISKTMP.data());
+        cp_afc(DATABIN "/magiskpolicy", buf);
+    }
 
     return true;
 }
@@ -256,10 +271,9 @@ static bool check_key_combo() {
  ***********************/
 
 static pthread_mutex_t stage_lock = PTHREAD_MUTEX_INITIALIZER;
+extern int disable_deny();
 
 void post_fs_data(int client) {
-    // ack
-    write_int(client, 0);
     close(client);
 
     mutex_guard lock(stage_lock);
@@ -277,6 +291,7 @@ void post_fs_data(int client) {
 
     unlock_blocks();
     mount_mirrors();
+    prune_su_access();
 
     if (access(SECURE_DIR, F_OK) != 0) {
         if (SDK_INT < 24) {
@@ -320,8 +335,6 @@ unblock_init:
 }
 
 void late_start(int client) {
-    // ack
-    write_int(client, 0);
     close(client);
 
     mutex_guard lock(stage_lock);
@@ -338,15 +351,13 @@ void late_start(int client) {
 }
 
 void boot_complete(int client) {
-    // ack
-    write_int(client, 0);
     close(client);
 
     mutex_guard lock(stage_lock);
     DAEMON_STATE = STATE_BOOT_COMPLETE;
     setup_logfile(false);
 
-    LOGI("** boot_complete triggered\n");
+    LOGI("** boot-complete triggered\n");
 
     if (safe_mode)
         return;
@@ -355,18 +366,15 @@ void boot_complete(int client) {
     if (access(SECURE_DIR, F_OK) != 0)
         xmkdir(SECURE_DIR, 0700);
 
-    if (!get_manager()) {
-        if (access(MANAGERAPK, F_OK) == 0) {
-            // Only try to install APK when no manager is installed
-            // Magisk Manager should be upgraded by itself, not through recovery installs
-            rename(MANAGERAPK, "/data/magisk.apk");
-            install_apk("/data/magisk.apk");
-        } else {
-            // Install stub
-            auto init = MAGISKTMP + "/magiskinit";
-            exec_command_sync(init.data(), "-x", "manager", "/data/magisk.apk");
-            install_apk("/data/magisk.apk");
-        }
-    }
-    unlink(MANAGERAPK);
+    // Ensure manager exists
+    check_pkg_refresh();
+    get_manager(0, nullptr, true);
+}
+
+void zygote_restart(int client) {
+    close(client);
+
+    LOGI("** zygote restarted\n");
+    pkg_xml_ino = 0;
+    prune_su_access();
 }

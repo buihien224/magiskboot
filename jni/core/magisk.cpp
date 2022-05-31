@@ -1,7 +1,7 @@
 #include <sys/mount.h>
 #include <libgen.h>
 
-#include <utils.hpp>
+#include <base.hpp>
 #include <magisk.hpp>
 #include <daemon.hpp>
 #include <selinux.hpp>
@@ -29,9 +29,8 @@ Options:
 Advanced Options (Internal APIs):
    --daemon                  manually start magisk daemon
    --stop                    remove all magisk changes and stop daemon
-   --[init trigger]          start service for init trigger
-                             Supported init triggers:
-                             post-fs-data, service, boot-complete
+   --[init trigger]          callback on init triggers. Valid triggers:
+                             post-fs-data, service, boot-complete, zygote-restart
    --unlock-blocks           set BLKROSET flag to OFF for all block devices
    --restorecon              restore selinux context on Magisk files
    --clone-attr SRC DEST     clone permission, owner, and selinux context
@@ -53,17 +52,19 @@ int magisk_main(int argc, char *argv[]) {
     if (argc < 2)
         usage();
     if (argv[1] == "-c"sv) {
-        printf(MAGISK_VERSION ":MAGISK (" str(MAGISK_VER_CODE) ")\n");
+#if MAGISK_DEBUG
+        printf(MAGISK_VERSION ":MAGISK:D (" str(MAGISK_VER_CODE) ")\n");
+#else
+        printf(MAGISK_VERSION ":MAGISK:R (" str(MAGISK_VER_CODE) ")\n");
+#endif
         return 0;
     } else if (argv[1] == "-v"sv) {
-        int fd = connect_daemon();
-        write_int(fd, CHECK_VERSION);
+        int fd = connect_daemon(MainRequest::CHECK_VERSION);
         string v = read_string(fd);
         printf("%s\n", v.data());
         return 0;
     } else if (argv[1] == "-V"sv) {
-        int fd = connect_daemon();
-        write_int(fd, CHECK_VERSION_CODE);
+        int fd = connect_daemon(MainRequest::CHECK_VERSION_CODE);
         printf("%d\n", read_int(fd));
         return 0;
     } else if (argv[1] == "--list"sv) {
@@ -76,37 +77,34 @@ int magisk_main(int argc, char *argv[]) {
     } else if (argv[1] == "--restorecon"sv) {
         restorecon();
         return 0;
-    } else if (argc >= 4 && argv[1] == "--clone-attr"sv) {;
+    } else if (argc >= 4 && argv[1] == "--clone-attr"sv) {
         clone_attr(argv[2], argv[3]);
         return 0;
     } else if (argc >= 4 && argv[1] == "--clone"sv) {
         cp_afc(argv[2], argv[3]);
         return 0;
     } else if (argv[1] == "--daemon"sv) {
-        int fd = connect_daemon(true);
-        write_int(fd, START_DAEMON);
+        close(connect_daemon(MainRequest::START_DAEMON, true));
         return 0;
     } else if (argv[1] == "--stop"sv) {
-        int fd = connect_daemon();
-        write_int(fd, STOP_DAEMON);
+        int fd = connect_daemon(MainRequest::STOP_DAEMON);
         return read_int(fd);
     } else if (argv[1] == "--post-fs-data"sv) {
-        int fd = connect_daemon(true);
-        write_int(fd, POST_FS_DATA);
-        return read_int(fd);
+        close(connect_daemon(MainRequest::POST_FS_DATA, true));
+        return 0;
     } else if (argv[1] == "--service"sv) {
-        int fd = connect_daemon(true);
-        write_int(fd, LATE_START);
-        return read_int(fd);
+        close(connect_daemon(MainRequest::LATE_START, true));
+        return 0;
     } else if (argv[1] == "--boot-complete"sv) {
-        int fd = connect_daemon(true);
-        write_int(fd, BOOT_COMPLETE);
-        return read_int(fd);
+        close(connect_daemon(MainRequest::BOOT_COMPLETE));
+        return 0;
+    } else if (argv[1] == "--zygote-restart"sv) {
+        close(connect_daemon(MainRequest::ZYGOTE_RESTART));
+        return 0;
     } else if (argv[1] == "--denylist"sv) {
         return denylist_cli(argc - 1, argv + 1);
-    }else if (argc >= 3 && argv[1] == "--sqlite"sv) {
-        int fd = connect_daemon();
-        write_int(fd, SQLITE_CMD);
+    } else if (argc >= 3 && argv[1] == "--sqlite"sv) {
+        int fd = connect_daemon(MainRequest::SQLITE_CMD);
         write_string(fd, argv[2]);
         string res;
         for (;;) {
@@ -116,12 +114,10 @@ int magisk_main(int argc, char *argv[]) {
             printf("%s\n", res.data());
         }
     } else if (argv[1] == "--remove-modules"sv) {
-        int fd = connect_daemon();
-        write_int(fd, REMOVE_MODULES);
+        int fd = connect_daemon(MainRequest::REMOVE_MODULES);
         return read_int(fd);
     } else if (argv[1] == "--path"sv) {
-        int fd = connect_daemon();
-        write_int(fd, GET_PATH);
+        int fd = connect_daemon(MainRequest::GET_PATH);
         string path = read_string(fd);
         printf("%s\n", path.data());
         return 0;

@@ -248,7 +248,7 @@ LOCAL_SRC_FILES := \
     selinux/libsepol/cil/src/cil_verify.c \
     selinux/libsepol/cil/src/cil_write_ast.c
 
-LOCAL_CFLAGS := -Dgetline=__getline -Wno-implicit-function-declaration
+LOCAL_CFLAGS := -Wno-unused-but-set-variable
 include $(BUILD_STATIC_LIBRARY)
 
 # libselinux.a
@@ -260,7 +260,7 @@ LOCAL_EXPORT_C_INCLUDES := $(LIBSELINUX)
 LOCAL_STATIC_LIBRARIES := libpcre2
 LOCAL_CFLAGS := \
     -Wno-implicit-function-declaration -Wno-int-conversion -Wno-unused-function \
-    -Wno-macro-redefined -D_GNU_SOURCE -DUSE_PCRE2 \
+    -Wno-macro-redefined -Wno-unused-but-set-variable -D_GNU_SOURCE -DUSE_PCRE2 \
     -DNO_PERSISTENTLY_STORED_PATTERNS -DDISABLE_SETRANS -DDISABLE_BOOL \
     -DNO_MEDIA_BACKEND -DNO_X_BACKEND -DNO_DB_BACKEND -DNO_ANDROID_BACKEND \
     -Dfgets_unlocked=fgets -D'__fsetlocking(...)='
@@ -364,18 +364,18 @@ include $(BUILD_STATIC_LIBRARY)
 # libxhook.a
 include $(CLEAR_VARS)
 LOCAL_MODULE:= libxhook
-LOCAL_C_INCLUDES := $(LOCAL_PATH)/xhook/libxhook/jni
+LOCAL_C_INCLUDES := $(LOCAL_PATH)/libxhook
 LOCAL_EXPORT_C_INCLUDES := $(LOCAL_C_INCLUDES)
 LOCAL_CFLAGS := -Wall -Wextra -Werror -fvisibility=hidden -D__android_log_print=magisk_log_print
 LOCAL_CONLYFLAGS := -std=c11
 LOCAL_SRC_FILES := \
-    xhook/libxhook/jni/xh_log.c \
-    xhook/libxhook/jni/xh_version.c \
-    xhook/libxhook/jni/xh_jni.c \
-    xhook/libxhook/jni/xhook.c \
-    xhook/libxhook/jni/xh_core.c \
-    xhook/libxhook/jni/xh_util.c \
-    xhook/libxhook/jni/xh_elf.c
+    libxhook/xh_log.c \
+    libxhook/xh_version.c \
+    libxhook/xh_jni.c \
+    libxhook/xhook.c \
+    libxhook/xh_core.c \
+    libxhook/xh_util.c \
+    libxhook/xh_elf.c
 include $(BUILD_STATIC_LIBRARY)
 
 # libz.a

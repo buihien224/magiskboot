@@ -4,7 +4,7 @@
 #include <sys/mount.h>
 
 #include <magisk.hpp>
-#include <utils.hpp>
+#include <base.hpp>
 #include <daemon.hpp>
 #include <selinux.hpp>
 #include <db.hpp>
@@ -86,20 +86,20 @@ void clear_poll() {
 static void poll_ctrl_handler(pollfd *pfd) {
     int code = read_int(pfd->fd);
     switch (code) {
-        case POLL_CTRL_NEW: {
-            pollfd new_fd;
-            poll_callback cb;
-            xxread(pfd->fd, &new_fd, sizeof(new_fd));
-            xxread(pfd->fd, &cb, sizeof(cb));
-            register_poll(&new_fd, cb);
-            break;
-        }
-        case POLL_CTRL_RM: {
-            int fd = read_int(pfd->fd);
-            bool auto_close = read_int(pfd->fd);
-            unregister_poll(fd, auto_close);
-            break;
-        }
+    case POLL_CTRL_NEW: {
+        pollfd new_fd;
+        poll_callback cb;
+        xxread(pfd->fd, &new_fd, sizeof(new_fd));
+        xxread(pfd->fd, &cb, sizeof(cb));
+        register_poll(&new_fd, cb);
+        break;
+    }
+    case POLL_CTRL_RM: {
+        int fd = read_int(pfd->fd);
+        bool auto_close = read_int(pfd->fd);
+        unregister_poll(fd, auto_close);
+        break;
+    }
     }
 }
 
@@ -135,59 +135,67 @@ static void poll_ctrl_handler(pollfd *pfd) {
 
 static void handle_request_async(int client, int code, const sock_cred &cred) {
     switch (code) {
-    case DENYLIST:
+    case MainRequest::DENYLIST:
         denylist_handler(client, &cred);
         break;
-    case SUPERUSER:
+    case MainRequest::SUPERUSER:
         su_daemon_handler(client, &cred);
         break;
-    case POST_FS_DATA:
+    case MainRequest::POST_FS_DATA:
         post_fs_data(client);
         break;
-    case LATE_START:
+    case MainRequest::LATE_START:
         late_start(client);
         break;
-    case BOOT_COMPLETE:
+    case MainRequest::BOOT_COMPLETE:
         boot_complete(client);
         break;
-    case SQLITE_CMD:
+    case MainRequest::ZYGOTE_RESTART:
+        zygote_restart(client);
+        break;
+    case MainRequest::SQLITE_CMD:
         exec_sql(client);
         break;
-    case REMOVE_MODULES:
+    case MainRequest::REMOVE_MODULES:
         remove_modules();
         write_int(client, 0);
         close(client);
         reboot();
         break;
-    case ZYGISK_REQUEST:
-    case ZYGISK_PASSTHROUGH:
+    case MainRequest::ZYGISK:
+    case MainRequest::ZYGISK_PASSTHROUGH:
         zygisk_handler(client, &cred);
         break;
     default:
-        close(client);
-        break;
+        __builtin_unreachable();
     }
 }
 
 static void handle_request_sync(int client, int code) {
     switch (code) {
-    case CHECK_VERSION:
-        write_string(client, MAGISK_VERSION ":MAGISK");
+    case MainRequest::CHECK_VERSION:
+#if MAGISK_DEBUG
+        write_string(client, MAGISK_VERSION ":MAGISK:D");
+#else
+        write_string(client, MAGISK_VERSION ":MAGISK:R");
+#endif
         break;
-    case CHECK_VERSION_CODE:
+    case MainRequest::CHECK_VERSION_CODE:
         write_int(client, MAGISK_VER_CODE);
         break;
-    case GET_PATH:
+    case MainRequest::GET_PATH:
         write_string(client, MAGISKTMP.data());
         break;
-    case START_DAEMON:
+    case MainRequest::START_DAEMON:
         setup_logfile(true);
         break;
-    case STOP_DAEMON:
+    case MainRequest::STOP_DAEMON:
         denylist_handler(-1, nullptr);
         write_int(client, 0);
         // Terminate the daemon!
         exit(0);
+    default:
+        __builtin_unreachable();
     }
 }
 
@@ -195,7 +203,7 @@ static bool is_client(pid_t pid) {
     // Verify caller is the same as server
     char path[32];
     sprintf(path, "/proc/%d/exe", pid);
-    struct stat st;
+    struct stat st{};
     return !(stat(path, &st) || st.st_dev != self_st.st_dev || st.st_ino != self_st.st_ino);
 }
 
@@ -208,52 +216,65 @@ static void handle_request(pollfd *pfd) {
     bool is_zygote;
     int code;
 
-    if (!get_client_cred(client, &cred))
+    if (!get_client_cred(client, &cred)) {
+        // Client died
         goto done;
-    is_root = cred.uid == UID_ROOT;
+    }
+    is_root = cred.uid == AID_ROOT;
     is_zygote = cred.context == "u:r:zygote:s0";
 
-    if (!is_root && !is_zygote && !is_client(cred.pid))
+    if (!is_root && !is_zygote && !is_client(cred.pid)) {
+        // Unsupported client state
+        write_int(client, MainResponse::ACCESS_DENIED);
         goto done;
+    }
 
     code = read_int(client);
-    if (code < 0 || (code & DAEMON_CODE_MASK) >= DAEMON_CODE_END)
+    if (code < 0 || code >= MainRequest::END || code == MainRequest::_SYNC_BARRIER_) {
+        // Unknown request code
         goto done;
+    }
 
     // Check client permissions
     switch (code) {
-    case POST_FS_DATA:
-    case LATE_START:
-    case BOOT_COMPLETE:
-    case SQLITE_CMD:
-    case GET_PATH:
-    case DENYLIST:
-    case STOP_DAEMON:
+    case MainRequest::POST_FS_DATA:
+    case MainRequest::LATE_START:
+    case MainRequest::BOOT_COMPLETE:
+    case MainRequest::ZYGOTE_RESTART:
+    case MainRequest::SQLITE_CMD:
+    case MainRequest::GET_PATH:
+    case MainRequest::DENYLIST:
+    case MainRequest::STOP_DAEMON:
         if (!is_root) {
-            write_int(client, ROOT_REQUIRED);
+            write_int(client, MainResponse::ROOT_REQUIRED);
             goto done;
         }
         break;
-    case REMOVE_MODULES:
-        if (!is_root && cred.uid != UID_SHELL) {
-            write_int(client, 1);
+    case MainRequest::REMOVE_MODULES:
+        if (!is_root && cred.uid != AID_SHELL) {
+            write_int(client, MainResponse::ACCESS_DENIED);
             goto done;
         }
         break;
-    case ZYGISK_REQUEST:
+    case MainRequest::ZYGISK:
         if (!is_zygote) {
-            write_int(client, DAEMON_ERROR);
+            // Invalid client context
+            write_int(client, MainResponse::ACCESS_DENIED);
             goto done;
         }
+        break;
+    default:
         break;
     }
 
-    if (code & SYNC_FLAG) {
+    write_int(client, MainResponse::OK);
+
+    if (code < MainRequest::_SYNC_BARRIER_) {
         handle_request_sync(client, code);
         goto done;
     }
 
-    // Handle complex requests in another thread
+    // Handle async requests in another thread
     exec_task([=] { handle_request_async(client, code, cred); });
     return;
 
@@ -270,10 +291,7 @@ static void switch_cgroup(const char *cgroup, int pid) {
     if (fd == -1)
         return;
     snprintf(buf, sizeof(buf), "%d\n", pid);
-    if (xwrite(fd, buf, strlen(buf)) == -1) {
-        close(fd);
-        return;
-    }
+    xwrite(fd, buf, strlen(buf));
     close(fd);
 }
 
@@ -308,9 +326,11 @@ static void daemon_entry() {
     // Escape from cgroup
     int pid = getpid();
     switch_cgroup("/acct", pid);
-    switch_cgroup("/dev/memcg/apps", pid);
     switch_cgroup("/dev/cg2_bpf", pid);
     switch_cgroup("/sys/fs/cgroup", pid);
+    if (getprop("ro.config.per_app_memcg") != "false") {
+        switch_cgroup("/dev/memcg/apps", pid);
+    }
 
     // Get self stat
     char buf[64];
@@ -345,8 +365,7 @@ static void daemon_entry() {
             return true;
         });
     }
-    unlink("/dev/.se");
-    unlink(mount_list.data());
+    rm_rf((MAGISKTMP + "/" ROOTOVL).data());
 
     // Load config status
     auto config = MAGISKTMP + "/" INTLROOT "/config";
@@ -374,12 +393,13 @@ static void daemon_entry() {
     sockaddr_un sun{};
     socklen_t len = setup_sockaddr(&sun, MAIN_SOCKET);
     fd = xsocket(AF_LOCAL, SOCK_STREAM | SOCK_CLOEXEC, 0);
-    if (xbind(fd, (sockaddr*) &sun, len))
+    if (xbind(fd, (sockaddr *) &sun, len))
         exit(1);
     xlisten(fd, 10);
 
     default_new(poll_map);
     default_new(poll_fds);
+    default_new(module_list);
 
     // Register handler for main socket
     pollfd main_socket_pfd = { fd, POLLIN, 0 };
@@ -389,13 +409,21 @@ static void daemon_entry() {
     poll_loop();
 }
 
-int connect_daemon(bool create) {
+int connect_daemon(int req, bool create) {
     sockaddr_un sun{};
     socklen_t len = setup_sockaddr(&sun, MAIN_SOCKET);
     int fd = xsocket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
-    if (connect(fd, (sockaddr*) &sun, len)) {
-        if (!create || getuid() != UID_ROOT) {
+    if (connect(fd, (sockaddr *) &sun, len)) {
+        if (!create || getuid() != AID_ROOT) {
             LOGE("No daemon is currently running!\n");
+            close(fd);
+            return -1;
+        }
+
+        char buf[64];
+        xreadlink("/proc/self/exe", buf, sizeof(buf));
+        if (str_starts(buf, "/system/bin/")) {
+            LOGE("Start daemon on /dev or /sbin\n");
             close(fd);
             return -1;
         }
@@ -405,8 +433,27 @@ int connect_daemon(bool create) {
             daemon_entry();
         }
 
-        while (connect(fd, (struct sockaddr*) &sun, len))
+        while (connect(fd, (struct sockaddr *) &sun, len))
             usleep(10000);
+    }
+    write_int(fd, req);
+    int res = read_int(fd);
+    if (res < MainResponse::ERROR || res >= MainResponse::END)
+        res = MainResponse::ERROR;
+    switch (res) {
+    case MainResponse::OK:
+        break;
+    case MainResponse::ERROR:
+        LOGE("Daemon error\n");
+        exit(-1);
+    case MainResponse::ROOT_REQUIRED:
+        LOGE("Root is required for this operation\n");
+        exit(-1);
+    case MainResponse::ACCESS_DENIED:
+        LOGE("Access denied\n");
+        exit(-1);
+    default:
+        __builtin_unreachable();
     }
     return fd;
 }
