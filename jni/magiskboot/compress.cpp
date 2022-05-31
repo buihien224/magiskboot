@@ -10,7 +10,7 @@
 #include <zopfli/util.h>
 #include <zopfli/deflate.h>
 
-#include <utils.hpp>
+#include <base.hpp>
 
 #include "magiskboot.hpp"
 #include "compress.hpp"
@@ -438,7 +438,11 @@ public:
 
     ~LZ4F_encoder() override {
         size_t len = LZ4F_compressEnd(ctx, out_buf, outCapacity, nullptr);
-        bwrite(out_buf, len);
+        if (LZ4F_isError(len)) {
+            LOGE("LZ4F end of frame error: %s\n", LZ4F_getErrorName(len));
+        } else if (!bwrite(out_buf, len)) {
+            LOGE("LZ4F end of frame error: I/O error\n");
+        }
         LZ4F_freeCompressionContext(ctx);
         delete[] out_buf;
     }
@@ -454,7 +458,7 @@ private:
 class LZ4_decoder : public chunk_out_stream {
 public:
     explicit LZ4_decoder(stream_ptr &&base) :
-    	chunk_out_stream(std::move(base), LZ4_COMPRESSED, sizeof(block_sz) + 4),
+        chunk_out_stream(std::move(base), LZ4_COMPRESSED, sizeof(block_sz)),
         out_buf(new char[LZ4_UNCOMPRESSED]), block_sz(0) {}
 
     ~LZ4_decoder() override {
@@ -471,12 +475,14 @@ protected:
         auto in = reinterpret_cast<const char *>(buf);
 
         if (block_sz == 0) {
-            if (chunk_sz == sizeof(block_sz) + 4) {
-                // Skip the first 4 bytes, which is magic
-                memcpy(&block_sz, in + 4, sizeof(block_sz));
-            } else {
-                memcpy(&block_sz, in, sizeof(block_sz));
+            memcpy(&block_sz, in, sizeof(block_sz));
+            if (block_sz == 0x184C2102) {
+                // This is actually the lz4 magic, read the next 4 bytes
+                block_sz = 0;
+                chunk_sz = sizeof(block_sz);
+                return true;
             }
+            // Read the next block chunk
             chunk_sz = block_sz;
             return true;
         } else {
@@ -520,7 +526,7 @@ protected:
             return false;
         }
         if (bwrite(&block_sz, sizeof(block_sz)) && bwrite(out_buf, block_sz)) {
-            in_total += sizeof(block_sz) + block_sz;
+            in_total += len;
             return true;
         }
         return false;
